@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+import { useAssets } from '@/hooks/useVikaData';
+
 type TabType = '全览' | '股票' | '债券' | '理财' | '商品';
 
 interface AssetListProps {
@@ -8,63 +11,56 @@ interface AssetListProps {
   onSelectAsset: (asset: string) => void;
 }
 
-// 模拟数据
-const mockAssets: Record<TabType, Array<{ id: string; name: string; price: number; change: number }>> = {
-  '全览': [
-    { id: '1', name: '平安银行', price: 12.34, change: 2.5 },
-    { id: '2', name: '比亚迪', price: 123.45, change: -1.2 },
-    { id: '3', name: '贵州茅台', price: 1234.56, change: 3.8 },
-  ],
-  '股票': [
-    { id: '1', name: '平安银行', price: 12.34, change: 2.5 },
-    { id: '2', name: '比亚迪', price: 123.45, change: -1.2 },
-    { id: '3', name: '贵州茅台', price: 1234.56, change: 3.8 },
-    { id: '4', name: '中国石油', price: 5.67, change: 0.8 },
-  ],
-  '债券': [
-    { id: '5', name: '国开债', price: 100.23, change: 0.1 },
-    { id: '6', name: '政策性银行债', price: 99.87, change: -0.2 },
-  ],
-  '理财': [
-    { id: '7', name: '货币基金A', price: 1.0234, change: 0.02 },
-    { id: '8', name: '理财产品1', price: 100.5, change: 0.5 },
-  ],
-  '商品': [
-    { id: '9', name: '黄金', price: 456.78, change: 1.5 },
-    { id: '10', name: '白银', price: 56.78, change: -0.8 },
-  ],
-};
+interface Asset {
+  recordId: string;
+  标的名称: string;
+  标的代码: string;
+}
 
 export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: AssetListProps) {
-  const assets = mockAssets[activeTab];
+  const { assets, loading, error, fetchAssets } = useAssets();
+
+  const handleRefresh = async () => {
+    await fetchAssets(true); // 强制刷新
+  };
 
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="font-semibold text-gray-900">标的列表</h2>
+        <div className="flex justify-between items-center">
+          <h2 className="font-semibold text-gray-900">标的列表</h2>
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="text-sm px-2 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="刷新标的数据"
+          >
+            {loading ? '加载中...' : '刷新'}
+          </button>
+        </div>
+        {error && (
+          <p className="text-red-600 text-xs mt-2">{error}</p>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto">
-        {assets.map((asset) => (
-          <button
-            key={asset.id}
-            onClick={() => onSelectAsset(asset.id)}
-            className={`w-full px-4 py-3 text-left border-b border-gray-100 hover:bg-blue-50 transition-colors ${
-              selectedAsset === asset.id ? 'bg-blue-100' : ''
-            }`}
-          >
-            <div className="font-medium text-sm text-gray-900">{asset.name}</div>
-            <div className="flex justify-between items-center mt-1">
-              <span className="text-xs text-gray-600">¥{asset.price.toFixed(2)}</span>
-              <span
-                className={`text-xs font-medium ${
-                  asset.change >= 0 ? 'text-red-600' : 'text-green-600'
-                }`}
-              >
-                {asset.change > 0 ? '+' : ''}{asset.change}%
-              </span>
-            </div>
-          </button>
-        ))}
+        {loading ? (
+          <div className="p-4 text-center text-gray-500 text-sm">加载中...</div>
+        ) : assets.length > 0 ? (
+          assets.map((asset) => (
+            <button
+              key={asset.recordId}
+              onClick={() => onSelectAsset(asset.标的名称)}
+              className={`w-full px-4 py-3 text-left border-b border-gray-100 hover:bg-blue-50 transition-colors ${
+                selectedAsset === asset.标的名称 ? 'bg-blue-100' : ''
+              }`}
+            >
+              <div className="font-medium text-sm text-gray-900">{asset.标的名称}</div>
+              <div className="text-xs text-gray-500 mt-1">{asset.标的代码}</div>
+            </button>
+          ))
+        ) : (
+          <div className="p-4 text-center text-gray-500 text-sm">暂无标的数据</div>
+        )}
       </div>
     </div>
   );
