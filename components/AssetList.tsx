@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useAssets } from '@/hooks/useVikaData';
+import { useState, useEffect } from 'react';
+import { useAssets, useTrades } from '@/hooks/useVikaData';
 
 type TabType = '全览' | '股票' | '债券' | '理财' | '商品';
 
@@ -15,13 +15,82 @@ interface Asset {
   recordId: string;
   标的名称: string;
   标的代码: string;
+  当前价格?: string;
 }
 
 export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: AssetListProps) {
   const { assets, loading, error, fetchAssets } = useAssets();
+  // 为了获取持仓成本，我们需要计算每个标的的持仓成本
+  // 这里我们创建一个状态来存储每个标的的持仓成本
+  const [costPrices, setCostPrices] = useState<{ [key: string]: number }>({});
+  const [assetTradesData, setAssetTradesData] = useState<{ [key: string]: any[] }>({});
+
+  // 为每个标的获取交易数据并计算持仓成本
+  useEffect(() => {
+    const calculateCostPrices = async () => {
+      const newCostPrices: { [key: string]: number } = {};
+      
+      for (const asset of assets) {
+        // 使用 useTrades hook 获取每个标的的交易数据
+        // 但由于 hook 不能在循环中使用，我们直接调用 API
+        try {
+          const response = await fetch(`/api/vika/trades?asset=${encodeURIComponent(asset.标的名称)}`);
+          const result = await response.json();
+          
+          if (result.success && result.data) {
+            const trades = result.data;
+            // 计算平均持仓成本
+            let totalCost = 0;
+            let totalQuantity = 0;
+            
+            trades.forEach((trade: any) => {
+              if (trade.买入日期 && trade.买入金额 > 0 && trade.买入数量 > 0) {
+                totalCost += trade.买入金额;
+                totalQuantity += trade.买入数量;
+              }
+            });
+            
+            if (totalQuantity > 0) {
+              newCostPrices[asset.标的名称] = totalCost / totalQuantity;
+            }
+          }
+        } catch (err) {
+          console.error(`获取 ${asset.标的名称} 的交易数据失败:`, err);
+        }
+      }
+      
+      setCostPrices(newCostPrices);
+    };
+    
+    if (assets.length > 0) {
+      calculateCostPrices();
+    }
+  }, [assets]);
 
   const handleRefresh = async () => {
     await fetchAssets(true); // 强制刷新
+  };
+
+  // 计算显示的百分比
+  const getPercentage = (asset: Asset): string | null => {
+    const currentPrice = asset.当前价格 ? parseFloat(asset.当前价格) : null;
+    const costPrice = costPrices[asset.标的名称];
+    
+    if (!currentPrice || !costPrice) return null;
+    
+    const ratio = (currentPrice / costPrice - 1) * 100;
+    return ratio > 0 ? `+${ratio.toFixed(2)}%` : `${ratio.toFixed(2)}%`;
+  };
+
+  // 获取百分比颜色
+  const getPercentageColor = (asset: Asset): string => {
+    const currentPrice = asset.当前价格 ? parseFloat(asset.当前价格) : null;
+    const costPrice = costPrices[asset.标的名称];
+    
+    if (!currentPrice || !costPrice) return '#6b7280';
+    
+    const ratio = (currentPrice / costPrice - 1) * 100;
+    return ratio > 0 ? '#10b981' : '#ef4444';
   };
 
   return (
@@ -54,8 +123,25 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
                 selectedAsset === asset.标的名称 ? 'bg-blue-100' : ''
               }`}
             >
-              <div className="font-medium text-sm text-gray-900">{asset.标的名称}</div>
-              <div className="text-xs text-gray-500 mt-1">{asset.标的代码}</div>
+              <div className="flex justify-between items-center">
+                <div className="flex-1">
+                  <div className="font-medium text-sm text-gray-900">{asset.标的名称}</div>
+                  <div className="text-xs text-gray-500 mt-1">{asset.标的代码}</div>
+                </div>
+                {asset.当前价格 && costPrices[asset.标的名称] && (
+                  <div className="ml-4 flex flex-col items-end">
+                    <span className="text-xs text-gray-600">
+                      ¥{parseFloat(asset.当前价格).toFixed(3)}
+                    </span>
+                    <span
+                      className="text-xs font-medium mt-1"
+                      style={{ color: getPercentageColor(asset) }}
+                    >
+                      {getPercentage(asset)}
+                    </span>
+                  </div>
+                )}
+              </div>
             </button>
           ))
         ) : (

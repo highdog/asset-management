@@ -22,6 +22,12 @@ export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
   const [recordList, setRecordList] = useState<TradeRecordItem[]>([]);
 
   useEffect(() => {
+    // 如果没有选择标的或数据还在加载，清空记录列表
+    if (!selectedAsset) {
+      setRecordList([]);
+      return;
+    }
+
     const items: TradeRecordItem[] = [];
 
     // 添加未完成交易的买入记录
@@ -77,7 +83,7 @@ export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
     // 按日期降序排序（最新的在前）
     items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     setRecordList(items);
-  }, [trades, completedTrades]);
+  }, [selectedAsset, trades, completedTrades]);
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-4 border-b border-gray-200 bg-gray-50">

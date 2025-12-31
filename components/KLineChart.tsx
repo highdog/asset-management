@@ -50,12 +50,13 @@ interface KLineChartProps {
 export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps) {
   const { trades, loading, error, fetchTrades } = useTrades(selectedAsset);
   const { completedTrades, loading: completedLoading, error: completedError, fetchCompletedTrades } = useCompletedTrades(selectedAsset);
-  const { assets } = useAssets();
+  const { assets, loading: assetsLoading, fetchAssets } = useAssets();
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [zoomStartIndex, setZoomStartIndex] = useState(0);
   const [zoomEndIndex, setZoomEndIndex] = useState(-1);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [costPrice, setCostPrice] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -162,10 +163,25 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   }, [selectedAsset, trades, completedTrades, assets]);
 
   const handleRefresh = async () => {
-    // 清除旧的丰存，强制从 API 销取最新数据
+    // 清除旧的缓存，强制从 API 获取最新数据
     clearAllCache();
-    await fetchTrades(true); // 强制刷新未完成交易
-    await fetchCompletedTrades(true); // 强制刷新已完成交易
+    // 同时刷新两个数据源
+    const [tradesResult] = await Promise.all([
+      fetchTrades(true),
+      fetchCompletedTrades(true)
+    ]);
+  };
+
+  const handleRefreshPrice = async () => {
+    // 刷新所有标的的当前价格
+    setPriceLoading(true);
+    try {
+      // 清除标的列表缓存，强制重新获取所有标的的当前价格
+      localStorage.removeItem('vika_assets_cache');
+      await fetchAssets(true);
+    } finally {
+      setPriceLoading(false);
+    }
   };
 
   // 处理鼠标滚轮缩放
@@ -393,14 +409,24 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
             {selectedAsset ? `${selectedAsset} - 买卖价格走势` : '请选择标的'}
           </h2>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={loading || completedLoading}
-          className="text-sm px-3 py-1 rounded bg-green-100 hover:bg-green-200 text-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          title="刷新交易数据"
-        >
-          {loading || completedLoading ? '刷新中...' : '刷新'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={loading || completedLoading}
+            className="text-sm px-3 py-1 rounded bg-green-100 hover:bg-green-200 text-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="刷新交易数据"
+          >
+            {loading || completedLoading ? '刷新中...' : '刷新'}
+          </button>
+          <button
+            onClick={handleRefreshPrice}
+            disabled={priceLoading}
+            className="text-sm px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="刷新当前价格"
+          >
+            {priceLoading ? '刷新中...' : '刷新价格'}
+          </button>
+        </div>
       </div>
 
       {(error || completedError) && (
@@ -423,7 +449,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         ) : selectedAsset ? (
           chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={displayData}>
+              <ComposedChart data={displayData} margin={{ top: 20, right: 100, bottom: 20, left: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="date"
@@ -456,9 +482,12 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                 <Line
                   type="monotone"
                   dataKey="买入价格"
-                  stroke="transparent"
+                  stroke="none"
+                  strokeWidth={0}
                   dot={<BuyDot />}
                   activeDot={{ r: 7 }}
+                  connectNulls={false}
+                  isAnimationActive={false}
                 />
                 {/* 卖出价格 - 连线，带百分比标签 */}
                 <Line
