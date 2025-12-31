@@ -153,11 +153,12 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     }
 
     setChartData(dateRange);
-    // 默认显示最近6个月
+    // 默认显示最近6个月，两端留出20条数据的空间
     const defaultDays = 180;
-    const start = Math.max(0, dateRange.length - defaultDays);
+    const padding = 20; // 两端留出的空间
+    const start = Math.max(0, dateRange.length - defaultDays - padding);
     setZoomStartIndex(start);
-    setZoomEndIndex(dateRange.length - 1);
+    setZoomEndIndex(Math.min(dateRange.length - 1, start + defaultDays + padding - 1));
   }, [selectedAsset, trades, completedTrades, assets]);
 
   const handleRefresh = async () => {
@@ -193,6 +194,196 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   const displayData = zoomEndIndex !== -1 && zoomStartIndex < chartData.length
     ? chartData.slice(Math.max(0, zoomStartIndex), Math.min(chartData.length, zoomEndIndex + 1))
     : chartData;
+
+  // 计算价格相对于当前价格的百分比 (当前价格 / 交易价格 - 1)
+  const getPricePercentage = (price: number | undefined): string => {
+    if (!price || currentPrice === null) return '';
+    const ratio = (currentPrice / price - 1) * 100;
+    return ratio > 0 ? `+${ratio.toFixed(2)}%` : `${ratio.toFixed(2)}%`;
+  };
+
+  // 获取百分比的颜色（负数为红色、正数为绿色）
+  const getPercentageColor = (price: number | undefined): string => {
+    if (!price || currentPrice === null) return '#10b981';
+    const ratio = (currentPrice / price - 1) * 100;
+    return ratio > 0 ? '#10b981' : '#ef4444';
+  };
+
+  // 自定义买入价格点组件
+  const BuyDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!payload.买入价格) return null;
+    const percentage = getPricePercentage(payload.买入价格);
+    const percentColor = getPercentageColor(payload.买入价格);
+    return (
+      <g key={`buy-${cx}`}>
+        <circle cx={cx} cy={cy} r={5} fill="#10b981" />
+        {/* 价格标签 */}
+        <text
+          x={cx + 8}
+          y={cy - 12}
+          fill="#10b981"
+          fontSize="10"
+          fontWeight="600"
+          textAnchor="start"
+        >
+          ¥{payload.买入价格.toFixed(3)}
+        </text>
+        {/* 百分比标签 */}
+        {percentage && (
+          <text
+            x={cx + 8}
+            y={cy - 2}
+            fill={percentColor}
+            fontSize="10"
+            fontWeight="500"
+            textAnchor="start"
+          >
+            {percentage}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  // 自定义卖出价格点组件
+  const SellDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!payload.卖出价格 || payload.卖出价格 === 0) return null;
+    const percentage = getPricePercentage(payload.卖出价格);
+    const percentColor = getPercentageColor(payload.卖出价格);
+    return (
+      <g key={`sell-${cx}`}>
+        <circle cx={cx} cy={cy} r={4} fill="#ef4444" />
+        {/* 价格标签 */}
+        <text
+          x={cx + 8}
+          y={cy - 12}
+          fill="#ef4444"
+          fontSize="10"
+          fontWeight="600"
+          textAnchor="start"
+        >
+          ¥{payload.卖出价格.toFixed(3)}
+        </text>
+        {/* 百分比标签 */}
+        {percentage && (
+          <text
+            x={cx + 8}
+            y={cy - 2}
+            fill={percentColor}
+            fontSize="10"
+            fontWeight="500"
+            textAnchor="start"
+          >
+            {percentage}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  // 自定义已完成买入价格点组件
+  const CompletedBuyDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!payload.完成买入价格) return null;
+    const percentage = getPricePercentage(payload.完成买入价格);
+    const percentColor = getPercentageColor(payload.完成买入价格);
+    return (
+      <g key={`completed-buy-${cx}`}>
+        <circle cx={cx} cy={cy} r={4} fill="#3b82f6" />
+        {/* 价格标签 */}
+        <text
+          x={cx + 8}
+          y={cy - 12}
+          fill="#3b82f6"
+          fontSize="10"
+          fontWeight="600"
+          textAnchor="start"
+        >
+          ¥{payload.完成买入价格.toFixed(3)}
+        </text>
+        {/* 百分比标签 */}
+        {percentage && (
+          <text
+            x={cx + 8}
+            y={cy - 2}
+            fill={percentColor}
+            fontSize="10"
+            fontWeight="500"
+            textAnchor="start"
+          >
+            {percentage}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  // 自定义已完成卖出价格点组件
+  const CompletedSellDot = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!payload.完成卖出价格 || payload.完成卖出价格 === 0) return null;
+    const percentage = getPricePercentage(payload.完成卖出价格);
+    const percentColor = getPercentageColor(payload.完成卖出价格);
+    return (
+      <g key={`completed-sell-${cx}`}>
+        <circle cx={cx} cy={cy} r={4} fill="#f97316" />
+        {/* 价格标签 */}
+        <text
+          x={cx + 8}
+          y={cy - 12}
+          fill="#f97316"
+          fontSize="10"
+          fontWeight="600"
+          textAnchor="start"
+        >
+          ¥{payload.完成卖出价格.toFixed(3)}
+        </text>
+        {/* 百分比标签 */}
+        {percentage && (
+          <text
+            x={cx + 8}
+            y={cy - 2}
+            fill={percentColor}
+            fontSize="10"
+            fontWeight="500"
+            textAnchor="start"
+          >
+            {percentage}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  // 计算Y轴的范围，自动适配数据
+  const getYAxisDomain = () => {
+    if (displayData.length === 0) return [0, 1] as const;
+    
+    const prices: number[] = [];
+    displayData.forEach((point: ChartPoint) => {
+      if (point.买入价格) prices.push(point.买入价格);
+      if (point.卖出价格) prices.push(point.卖出价格);
+      if (point.完成买入价格) prices.push(point.完成买入价格);
+      if (point.完成卖出价格) prices.push(point.完成卖出价格);
+    });
+    
+    // 包括当前价格和持仓成本
+    if (currentPrice !== null) prices.push(currentPrice);
+    if (costPrice !== null) prices.push(costPrice);
+    
+    if (prices.length === 0) return [0, 1] as const;
+    
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const range = maxPrice - minPrice || 1;
+    const padding = range * 0.1; // 上下留10%的空间
+    
+    const min = Math.max(0, minPrice - padding);
+    const max = maxPrice + padding;
+    return [min, max] as const;
+  };
 
   return (
     <div className="h-full flex flex-col bg-white p-4 overflow-hidden">
@@ -244,11 +435,13 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                 <YAxis
                   label={{ value: '价格', angle: -90, position: 'insideLeft' }}
                   tick={{ fontSize: 12 }}
+                  tickFormatter={(value: number) => value.toFixed(3)}
+                  domain={getYAxisDomain()}
                 />
                 <Tooltip
                   formatter={(value) => {
                     if (typeof value === 'number') {
-                      return value.toFixed(2);
+                      return value.toFixed(3);
                     }
                     return value;
                   }}
@@ -259,20 +452,20 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   }}
                 />
                 <Legend />
-                {/* 买入价格 - 仅显示点，不连线 */}
+                {/* 买入价格 - 仅显示点，不连线，带百分比标签 */}
                 <Line
                   type="monotone"
                   dataKey="买入价格"
                   stroke="transparent"
-                  dot={{ fill: '#10b981', r: 5 }}
+                  dot={<BuyDot />}
                   activeDot={{ r: 7 }}
                 />
-                {/* 卖出价格 - 连线 */}
+                {/* 卖出价格 - 连线，带百分比标签 */}
                 <Line
                   type="monotone"
                   dataKey="卖出价格"
                   stroke="#ef4444"
-                  dot={{ fill: '#ef4444', r: 4 }}
+                  dot={<SellDot />}
                   connectNulls
                 />
                 {/* 已完成买入价格 - 虚线 */}
@@ -281,7 +474,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   dataKey="完成买入价格"
                   stroke="#3b82f6"
                   strokeDasharray="5 5"
-                  dot={{ fill: '#3b82f6', r: 4 }}
+                  dot={<CompletedBuyDot />}
                   connectNulls
                 />
                 {/* 已完成卖出价格 - 虚线 */}
@@ -290,7 +483,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   dataKey="完成卖出价格"
                   stroke="#f97316"
                   strokeDasharray="5 5"
-                  dot={{ fill: '#f97316', r: 4 }}
+                  dot={<CompletedSellDot />}
                   connectNulls
                 />
                 {/* 当前价格线 */}
@@ -300,7 +493,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                     stroke="#8b5cf6"
                     strokeWidth={2}
                     label={{
-                      value: `当前价格: ¥${currentPrice.toFixed(4)}`,
+                      value: `当前价格: ¥${currentPrice.toFixed(3)}`,
                       position: 'right',
                       fill: '#8b5cf6',
                       fontSize: 12,
@@ -314,7 +507,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                     stroke="#f59e0b"
                     strokeWidth={2}
                     label={{
-                      value: `持仓成本: ¥${costPrice.toFixed(4)}`,
+                      value: `持仓成本: ¥${costPrice.toFixed(3)}`,
                       position: 'right',
                       fill: '#f59e0b',
                       fontSize: 12,
