@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useTrades, useCompletedTrades } from '@/hooks/useVikaData';
+import { useEffect, useState, useRef } from 'react';
+import { useTrades, useCompletedTrades, clearAllCache, useAssets } from '@/hooks/useVikaData';
 import {
   LineChart,
   Line,
@@ -11,6 +11,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ComposedChart,
+  ReferenceLine,
 } from 'recharts';
 
 type TabType = '全览' | '股票' | '债券' | '理财' | '商品';
@@ -48,13 +50,41 @@ interface KLineChartProps {
 export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps) {
   const { trades, loading, error, fetchTrades } = useTrades(selectedAsset);
   const { completedTrades, loading: completedLoading, error: completedError, fetchCompletedTrades } = useCompletedTrades(selectedAsset);
+  const { assets } = useAssets();
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
+  const [zoomStartIndex, setZoomStartIndex] = useState(0);
+  const [zoomEndIndex, setZoomEndIndex] = useState(-1);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [costPrice, setCostPrice] = useState<number | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!selectedAsset || (!trades || trades.length === 0) && (!completedTrades || completedTrades.length === 0)) {
       setChartData([]);
+      setZoomStartIndex(0);
+      setZoomEndIndex(-1);
+      setCurrentPrice(null);
+      setCostPrice(null);
       return;
     }
+
+    // 获取当前价格
+    const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
+    if (asset) {
+      setCurrentPrice(parseFloat(asset['当前价格']) || null);
+    }
+
+    // 计算持仓价格（未完成交易的平均成本）
+    let totalCost = 0;
+    let totalQuantity = 0;
+    trades?.forEach((trade: TradeRecord) => {
+      if (trade.买入日期 && trade.买入金额 > 0 && trade.买入数量 > 0) {
+        totalCost += trade.买入金额;
+        totalQuantity += trade.买入数量;
+      }
+    });
+    const avgCost = totalQuantity > 0 ? totalCost / totalQuantity : null;
+    setCostPrice(avgCost);
 
     // 构建图表数据
     const chartPoints: { [key: string]: ChartPoint } = {};
@@ -69,8 +99,8 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         chartPoints[trade.买入日期].买入价格 = trade.买入价格;
       }
 
-      // 添加卖出点
-      if (trade.卖出日期 && trade.卖出价格 > 0) {
+      // 添加卖出点 - 只需要卖出价格大于0，日期可以为空（表示未卖出）
+      if (trade.卖出价格 > 0 && trade.卖出日期) {
         if (!chartPoints[trade.卖出日期]) {
           chartPoints[trade.卖出日期] = { date: trade.卖出日期 };
         }
@@ -88,8 +118,8 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         chartPoints[trade.买入日期].完成买入价格 = trade.买入价格;
       }
 
-      // 添加已完成的卖出点
-      if (trade.卖出日期 && trade.卖出价格 > 0) {
+      // 添加已完成的卖出点 - 只需要卖出价格大于0，日期可以为空（表示未卖出）
+      if (trade.卖出价格 > 0 && trade.卖出日期) {
         if (!chartPoints[trade.卖出日期]) {
           chartPoints[trade.卖出日期] = { date: trade.卖出日期 };
         }
@@ -98,20 +128,74 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     });
 
     // 按日期排序
-    const sortedData = Object.values(chartPoints).sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
+    const sortedTransactionDates = Object.values(chartPoints)
+      .map(cp => new Date(cp.date).getTime())
+      .sort((a, b) => a - b);
 
-    setChartData(sortedData);
-  }, [selectedAsset, trades, completedTrades]);
+    if (sortedTransactionDates.length === 0) {
+      setChartData([]);
+      setZoomStartIndex(0);
+      setZoomEndIndex(-1);
+      return;
+    }
+
+    // 生成连续日期范围
+    const startDate = new Date(sortedTransactionDates[0]);
+    const endDate = new Date(sortedTransactionDates[sortedTransactionDates.length - 1]);
+    const dateRange: ChartPoint[] = [];
+    const currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+      // 使用中文粗体日日床格式（与 API 返回的格式一致）
+      const dateStr = currentDate.toLocaleDateString('zh-CN');
+      dateRange.push(chartPoints[dateStr] || { date: dateStr });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    setChartData(dateRange);
+    // 默认显示最近6个月
+    const defaultDays = 180;
+    const start = Math.max(0, dateRange.length - defaultDays);
+    setZoomStartIndex(start);
+    setZoomEndIndex(dateRange.length - 1);
+  }, [selectedAsset, trades, completedTrades, assets]);
 
   const handleRefresh = async () => {
+    // 清除旧的丰存，强制从 API 销取最新数据
+    clearAllCache();
     await fetchTrades(true); // 强制刷新未完成交易
     await fetchCompletedTrades(true); // 强制刷新已完成交易
   };
 
+  // 处理鼠标滚轮缩放
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (chartData.length === 0) return;
+    
+    e.preventDefault();
+    const currentSpan = zoomEndIndex - zoomStartIndex + 1;
+    const zoomFactor = e.deltaY > 0 ? 1.2 : 0.8; // 向下滚动放大，向上缩小
+    const newSpan = Math.max(10, Math.min(chartData.length, Math.round(currentSpan * zoomFactor)));
+    const spanDiff = newSpan - currentSpan;
+    
+    let newStart = Math.max(0, zoomStartIndex - Math.round(spanDiff / 2));
+    let newEnd = newStart + newSpan - 1;
+    
+    if (newEnd >= chartData.length) {
+      newEnd = chartData.length - 1;
+      newStart = Math.max(0, newEnd - newSpan + 1);
+    }
+    
+    setZoomStartIndex(newStart);
+    setZoomEndIndex(newEnd);
+  };
+
+  // 获取缩放后的数据
+  const displayData = zoomEndIndex !== -1 && zoomStartIndex < chartData.length
+    ? chartData.slice(Math.max(0, zoomStartIndex), Math.min(chartData.length, zoomEndIndex + 1))
+    : chartData;
+
   return (
-    <div className="h-full flex flex-col bg-white p-4">
+    <div className="h-full flex flex-col bg-white p-4 overflow-hidden">
       <div className="mb-4 flex justify-between items-start">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">
@@ -135,7 +219,12 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         </div>
       )}
 
-      <div className="flex-1 flex items-center justify-center bg-gray-50 rounded border border-gray-200">
+      <div
+        ref={chartContainerRef}
+        className="flex-1 flex items-center justify-center bg-gray-50 rounded border border-gray-200 overflow-hidden cursor-grab active:cursor-grabbing"
+        onWheel={handleWheel}
+        style={{ touchAction: 'none' }}
+      >
         {loading || completedLoading ? (
           <div className="text-center">
             <p className="text-gray-600">加载中...</p>
@@ -143,7 +232,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         ) : selectedAsset ? (
           chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <ComposedChart data={displayData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="date"
@@ -170,13 +259,15 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   }}
                 />
                 <Legend />
+                {/* 买入价格 - 仅显示点，不连线 */}
                 <Line
                   type="monotone"
                   dataKey="买入价格"
-                  stroke="#10b981"
-                  dot={{ fill: '#10b981', r: 4 }}
-                  connectNulls
+                  stroke="transparent"
+                  dot={{ fill: '#10b981', r: 5 }}
+                  activeDot={{ r: 7 }}
                 />
+                {/* 卖出价格 - 连线 */}
                 <Line
                   type="monotone"
                   dataKey="卖出价格"
@@ -184,6 +275,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   dot={{ fill: '#ef4444', r: 4 }}
                   connectNulls
                 />
+                {/* 已完成买入价格 - 虚线 */}
                 <Line
                   type="monotone"
                   dataKey="完成买入价格"
@@ -192,6 +284,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   dot={{ fill: '#3b82f6', r: 4 }}
                   connectNulls
                 />
+                {/* 已完成卖出价格 - 虚线 */}
                 <Line
                   type="monotone"
                   dataKey="完成卖出价格"
@@ -200,7 +293,35 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   dot={{ fill: '#f97316', r: 4 }}
                   connectNulls
                 />
-              </LineChart>
+                {/* 当前价格线 */}
+                {currentPrice !== null && (
+                  <ReferenceLine
+                    y={currentPrice}
+                    stroke="#8b5cf6"
+                    strokeWidth={2}
+                    label={{
+                      value: `当前价格: ¥${currentPrice.toFixed(4)}`,
+                      position: 'right',
+                      fill: '#8b5cf6',
+                      fontSize: 12,
+                    }}
+                  />
+                )}
+                {/* 持仓成本线 */}
+                {costPrice !== null && (
+                  <ReferenceLine
+                    y={costPrice}
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    label={{
+                      value: `持仓成本: ¥${costPrice.toFixed(4)}`,
+                      position: 'right',
+                      fill: '#f59e0b',
+                      fontSize: 12,
+                    }}
+                  />
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <div className="text-center">
@@ -216,6 +337,73 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
           </div>
         )}
       </div>
+
+      {/* 时间范围显示和快捷按钮 */}
+      {selectedAsset && chartData.length > 0 && (
+        <div className="mt-4 bg-gray-50 rounded p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-700 font-medium">
+              时间范围：{chartData[zoomStartIndex]?.date} 至 {chartData[zoomEndIndex]?.date}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const span = 30;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                1月
+              </button>
+              <button
+                onClick={() => {
+                  const span = 90;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                3月
+              </button>
+              <button
+                onClick={() => {
+                  const span = 180;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                6月
+              </button>
+              <button
+                onClick={() => {
+                  const span = 365;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                1年
+              </button>
+              <button
+                onClick={() => {
+                  setZoomStartIndex(0);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                全部
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">💡 提示：滚动鼠标滚轮或使用触控板可以放大/缩小时间段</p>
+        </div>
+      )}
 
       {/* Trade Summary */}
       {selectedAsset && (trades?.length > 0 || completedTrades?.length > 0) && (
@@ -272,3 +460,4 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     </div>
   );
 }
+

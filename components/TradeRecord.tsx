@@ -1,70 +1,135 @@
 'use client';
 
-interface TradeRecord {
+import { useEffect, useState } from 'react';
+import { useTrades, useCompletedTrades } from '@/hooks/useVikaData';
+
+interface TradeRecordItem {
   id: string;
   type: '买入' | '卖出';
   amount: number;
   price: number;
-  time: string;
+  date: string;
+  status: 'uncompleted' | 'completed';
 }
 
 interface TradeRecordProps {
   selectedAsset: string;
 }
 
-// 模拟交易记录数据
-const mockTradeRecords: Record<string, TradeRecord[]> = {
-  '1': [
-    { id: '1', type: '买入', amount: 100, price: 12.34, time: '14:35' },
-    { id: '2', type: '卖出', amount: 50, price: 12.50, time: '14:28' },
-    { id: '3', type: '买入', amount: 200, price: 12.10, time: '13:45' },
-  ],
-  '2': [
-    { id: '4', type: '买入', amount: 10, price: 120.00, time: '15:10' },
-    { id: '5', type: '卖出', amount: 5, price: 125.50, time: '14:55' },
-  ],
-  '3': [
-    { id: '6', type: '买入', amount: 1, price: 1234.56, time: '13:20' },
-  ],
-};
-
 export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
-  const records = selectedAsset ? mockTradeRecords[selectedAsset] || [] : [];
+  const { trades } = useTrades(selectedAsset);
+  const { completedTrades } = useCompletedTrades(selectedAsset);
+  const [recordList, setRecordList] = useState<TradeRecordItem[]>([]);
 
+  useEffect(() => {
+    const items: TradeRecordItem[] = [];
+
+    // 添加未完成交易的买入记录
+    trades?.forEach((trade: any) => {
+      if (trade.买入日期 && trade.买入价格 > 0) {
+        items.push({
+          id: `uncompleted_buy_${trade.id}`,
+          type: '买入',
+          amount: trade.买入数量,
+          price: trade.买入价格,
+          date: trade.买入日期,
+          status: 'uncompleted',
+        });
+      }
+      // 卖出记录 - 只需要卖出价格大于0和卖出日期非空
+      if (trade.卖出价格 > 0 && trade.卖出日期) {
+        items.push({
+          id: `uncompleted_sell_${trade.id}`,
+          type: '卖出',
+          amount: trade.卖出数量,
+          price: trade.卖出价格,
+          date: trade.卖出日期,
+          status: 'uncompleted',
+        });
+      }
+    });
+
+    // 添加已完成交易的买入记录
+    completedTrades?.forEach((trade: any) => {
+      if (trade.买入日期 && trade.买入价格 > 0) {
+        items.push({
+          id: `completed_buy_${trade.id}`,
+          type: '买入',
+          amount: trade.买入数量,
+          price: trade.买入价格,
+          date: trade.买入日期,
+          status: 'completed',
+        });
+      }
+      // 卖出记录 - 只需要卖出价格大于0和卖出日期非空
+      if (trade.卖出价格 > 0 && trade.卖出日期) {
+        items.push({
+          id: `completed_sell_${trade.id}`,
+          type: '卖出',
+          amount: trade.卖出数量,
+          price: trade.卖出价格,
+          date: trade.卖出日期,
+          status: 'completed',
+        });
+      }
+    });
+
+    // 按日期降序排序（最新的在前）
+    items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setRecordList(items);
+  }, [trades, completedTrades]);
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="font-semibold text-gray-900">交易记录</h2>
+        <h2 className="font-semibold text-gray-900">买卖记录</h2>
+        {selectedAsset && <p className="text-xs text-gray-500 mt-1">{selectedAsset}</p>}
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {records.length > 0 ? (
+        {recordList.length > 0 ? (
           <div>
-            {records.map((record) => (
+            {recordList.map((record) => (
               <div
                 key={record.id}
-                className="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+                  record.status === 'completed' ? 'bg-blue-50' : ''
+                }`}
               >
-                <div className="flex justify-between items-center mb-1">
-                  <span
-                    className={`text-xs font-semibold ${
-                      record.type === '买入' ? 'text-red-600' : 'text-green-600'
-                    }`}
-                  >
-                    {record.type}
-                  </span>
-                  <span className="text-xs text-gray-500">{record.time}</span>
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-sm font-semibold px-2 py-0.5 rounded ${
+                        record.type === '买入'
+                          ? 'text-red-600 bg-red-100'
+                          : 'text-green-600 bg-green-100'
+                      }`}
+                    >
+                      {record.type}
+                    </span>
+                    {record.status === 'completed' && (
+                      <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
+                        已完成
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-500">{record.date}</span>
                 </div>
-                <div className="text-xs text-gray-600">
-                  <div>数量: {record.amount}</div>
-                  <div>价格: ¥{record.price.toFixed(2)}</div>
+                <div className="text-xs text-gray-600 space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">数量:</span>
+                    <span className="font-medium">{record.amount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">价格:</span>
+                    <span className="font-medium">¥{record.price.toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-400 text-sm">暂无交易记录</p>
+            <p className="text-gray-400 text-sm">{selectedAsset ? '暂无交易记录' : '请选择标的'}</p>
           </div>
         )}
       </div>

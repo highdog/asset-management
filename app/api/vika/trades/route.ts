@@ -20,23 +20,33 @@ export async function GET(request: Request) {
     if (response.success) {
       let records = response.data.records || [];
 
-      // 如果指定了标的，则过滤
-      // selectedAsset 可以是标的名称
+      // 如果指定了标的，需要从标的表中查找对应的 recordId
       if (selectedAsset) {
-        records = records.filter((record: any) => {
-          const fields = record.fields || {};
-          const assetField = fields['标的'];
-          // 标的字段可能是数组（匹配 ID）或字符串（匹配名称）
-          if (Array.isArray(assetField)) {
-            // 如果是数组，仅作为筛选条件，不过滤
-            // 应为节目和交易记录之间是国际化字段
-            return true; // 再过滤器中按名称过滤
-          }
-          return assetField === selectedAsset || (typeof assetField === 'string' && assetField.includes(selectedAsset));
+        // 获取标的表中指定名称的 recordId
+        const assetDatasheet = vika.datasheet(process.env.NEXT_PUBLIC_VIKA_ASSETS_DATASHEET_ID || "dstxvJma14X5c88rvk");
+        const assetResponse = await assetDatasheet.records.query({ 
+          viewId: process.env.NEXT_PUBLIC_VIKA_ASSETS_VIEW_ID || "viwnRo6AsEaJU"
         });
+
+        if (assetResponse.success) {
+          const assets = assetResponse.data.records || [];
+          const targetAsset = assets.find((a: any) => a.fields['标的名称'] === selectedAsset);
+          
+          if (targetAsset) {
+            const targetRecordId = targetAsset.recordId;
+            // 过滤交易记录 - 通过标的字段中是否包含目标recordId来筛选
+            records = records.filter((record: any) => {
+              const fields = record.fields || {};
+              const assetField = fields['标的'];
+              if (Array.isArray(assetField)) {
+                return assetField.includes(targetRecordId);
+              }
+              return assetField === targetRecordId;
+            });
+          }
+        }
       }
 
-      // 处理记录，提取买卖信息
       const tradeData = records.map((record: any) => {
         const fields = record.fields || {};
         // 买入日期是时间戳，需要转换为日期字符串
@@ -79,35 +89,6 @@ export async function GET(request: Request) {
           手续费: parseFloat(fields['手续费']) || 0,
         };
       });
-
-      // 下一步：如果 selectedAsset 是标的名称，需要从标的表中查找沐应的 recordId
-      if (selectedAsset) {
-        // 获取标的表中指定名称的 recordId
-        const assetDatasheet = vika.datasheet(process.env.NEXT_PUBLIC_VIKA_ASSETS_DATASHEET_ID || "dstxvJma14X5c88rvk");
-        const assetResponse = await assetDatasheet.records.query({ 
-          viewId: process.env.NEXT_PUBLIC_VIKA_ASSETS_VIEW_ID || "viwnRo6AsEaJU"
-        });
-
-        if (assetResponse.success) {
-          const assets = assetResponse.data.records || [];
-          const targetAsset = assets.find((a: any) => a.fields['标的名称'] === selectedAsset);
-          
-          if (targetAsset) {
-            const targetRecordId = targetAsset.recordId;
-            // 过滤交易记录
-            return Response.json({ 
-              success: true, 
-              data: tradeData.filter((trade: any) => {
-                const assetField = trade.标的;
-                if (Array.isArray(assetField)) {
-                  return assetField.includes(targetRecordId);
-                }
-                return assetField === targetRecordId || assetField === selectedAsset;
-              })
-            });
-          }
-        }
-      }
 
       return Response.json({ success: true, data: tradeData });
     } else {
