@@ -29,7 +29,7 @@ export async function GET(request: Request) {
           持有金额: parseFloat(fields['持有金额']) || 0,
           比例: parseFloat(fields['比例']) || 0,
           总金额: parseFloat(fields['总金额']) || 0,
-          东财证券ID: fields['东财证券ID'] || '', // 新增字段：东财证券ID
+          东财证券ID: fields['标的代码'] || '', // 使用标的代码作为东财证券ID
         };
       }).filter(asset => asset.标的名称); // 仅保留有标的名称的记录
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useTrades, useCompletedTrades, clearAllCache, useAssets, useKlineData, clearKlineCache } from '@/hooks/useVikaData';
-import { secidMapping } from '@/lib/secidMapping';
 import {
   LineChart,
   Line,
@@ -73,9 +72,6 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
     if (asset && asset['东财证券ID']) {
       setSecid(asset['东财证券ID']);
-    } else if (selectedAsset && secidMapping[selectedAsset]) {
-      // 如果 Vika 中没有这个字段，尝试使用映射表
-      setSecid(secidMapping[selectedAsset]);
     } else {
       setSecid('');
     }
