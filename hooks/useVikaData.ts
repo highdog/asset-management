@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 const ASSETS_CACHE_KEY = 'vika_assets_cache';
 const TRADES_CACHE_KEY = 'vika_trades_cache';
 const COMPLETED_TRADES_CACHE_KEY = 'vika_completed_trades_cache';
+const KLINE_CACHE_KEY = 'vika_kline_cache';
 const CACHE_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 小时
 
 interface CacheData<T> {
@@ -186,7 +187,57 @@ export function useCompletedTrades(selectedAsset: string) {
   return { completedTrades, loading, error, fetchCompletedTrades };
 }
 
-// 清空所有缓存
+export function useKlineData(secid: string) {
+  const [klineData, setKlineData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchKline = useCallback(async (forceRefresh = false) => {
+    if (!secid) {
+      setKlineData(null);
+      return;
+    }
+
+    // 如果不强制刷新，先尝试使用缓存
+    if (!forceRefresh) {
+      const cacheKey = `${KLINE_CACHE_KEY}_${secid}`;
+      const cached = getCachedData<any>(cacheKey);
+      if (cached) {
+        setKlineData(cached);
+        return;
+      }
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/kline?secid=${encodeURIComponent(secid)}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setKlineData(result.data);
+        // 保存到本地缓存
+        const cacheKey = `${KLINE_CACHE_KEY}_${secid}`;
+        setCachedData(cacheKey, result.data);
+      } else {
+        setError(result.error || '获取K线数据失败');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '未知错误');
+    } finally {
+      setLoading(false);
+    }
+  }, [secid]);
+
+  // 初始化时加载
+  useEffect(() => {
+    if (secid) {
+      fetchKline();
+    }
+  }, [secid, fetchKline]);
+
+  return { klineData, loading, error, fetchKline };
+}
 export function clearAllCache(): void {
   try {
     localStorage.removeItem(ASSETS_CACHE_KEY);

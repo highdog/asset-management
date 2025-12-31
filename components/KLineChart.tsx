@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useTrades, useCompletedTrades, clearAllCache, useAssets } from '@/hooks/useVikaData';
+import { useTrades, useCompletedTrades, clearAllCache, useAssets, useKlineData } from '@/hooks/useVikaData';
+import { secidMapping } from '@/lib/secidMapping';
 import {
   LineChart,
   Line,
@@ -40,6 +41,12 @@ interface ChartPoint {
   卖出价格?: number;
   完成买入价格?: number; // 已完成交易的买入价格
   完成卖出价格?: number; // 已完成交易的卖出价格
+  // K线数据
+  open?: number; // 开盘价
+  close?: number; // 收盘价
+  high?: number; // 最高价
+  low?: number; // 最低价
+  volume?: number; // 成交量
 }
 
 interface KLineChartProps {
@@ -51,6 +58,8 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   const { trades, loading, error, fetchTrades } = useTrades(selectedAsset);
   const { completedTrades, loading: completedLoading, error: completedError, fetchCompletedTrades } = useCompletedTrades(selectedAsset);
   const { assets, loading: assetsLoading, fetchAssets } = useAssets();
+  const [secid, setSecid] = useState<string>(''); // 东财证券ID
+  const { klineData, loading: klineLoading } = useKlineData(secid); // 获取K线数据
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [zoomStartIndex, setZoomStartIndex] = useState(0);
   const [zoomEndIndex, setZoomEndIndex] = useState(-1);
@@ -58,6 +67,19 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   const [costPrice, setCostPrice] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // 提取所选标的东财证券ID
+  useEffect(() => {
+    const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
+    if (asset && asset['东财证券ID']) {
+      setSecid(asset['东财证券ID']);
+    } else if (selectedAsset && secidMapping[selectedAsset]) {
+      // 如果 Vika 中没有这个字段，尝试使用映射表
+      setSecid(secidMapping[selectedAsset]);
+    } else {
+      setSecid('');
+    }
+  }, [selectedAsset, assets]);
 
   useEffect(() => {
     if (!selectedAsset || (!trades || trades.length === 0) && (!completedTrades || completedTrades.length === 0)) {
@@ -90,7 +112,23 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     // 构建图表数据
     const chartPoints: { [key: string]: ChartPoint } = {};
 
-    // 添加未完成的交易记录
+    // 首先添加K线数据（作为K线离的背景）
+    if (klineData && klineData.klines && klineData.klines.length > 0) {
+      klineData.klines.forEach((kline: any) => {
+        const dateStr = kline.date; // K线数据的日期格式是 YYYY-MM-DD
+        if (!chartPoints[dateStr]) {
+          chartPoints[dateStr] = { date: dateStr };
+        }
+        // 布置K线数据
+        chartPoints[dateStr].open = kline.open;
+        chartPoints[dateStr].close = kline.close;
+        chartPoints[dateStr].high = kline.high;
+        chartPoints[dateStr].low = kline.low;
+        chartPoints[dateStr].volume = kline.volume;
+      });
+    }
+
+    // 然后添加未完成的交易记录
     trades?.forEach((trade: TradeRecord) => {
       // 添加买入点
       if (trade.买入日期 && trade.买入价格 > 0) {
@@ -147,8 +185,8 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     const currentDate = new Date(startDate);
 
     while (currentDate <= endDate) {
-      // 使用中文粗体日日床格式（与 API 返回的格式一致）
-      const dateStr = currentDate.toLocaleDateString('zh-CN');
+      // 使用 ISO 格式日期 (YYYY-MM-DD)，与 K 线数据和交易记录保持一致
+      const dateStr = currentDate.toISOString().split('T')[0];
       dateRange.push(chartPoints[dateStr] || { date: dateStr });
       currentDate.setDate(currentDate.getDate() + 1);
     }
@@ -160,7 +198,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     const start = Math.max(0, dateRange.length - defaultDays - padding);
     setZoomStartIndex(start);
     setZoomEndIndex(Math.min(dateRange.length - 1, start + defaultDays + padding - 1));
-  }, [selectedAsset, trades, completedTrades, assets]);
+  }, [selectedAsset, trades, completedTrades, assets, klineData]);
 
   const handleRefresh = async () => {
     // 清除旧的缓存，强制从 API 获取最新数据
@@ -478,6 +516,19 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   }}
                 />
                 <Legend />
+                {/* K线收盘价 - 作为背景线 */}
+                {klineData && klineData.klines && klineData.klines.length > 0 && (
+                  <Line
+                    type="monotone"
+                    dataKey="close"
+                    stroke="#d1d5db"
+                    strokeWidth={1}
+                    dot={false}
+                    connectNulls
+                    isAnimationActive={false}
+                    name="K线收盘价"
+                  />
+                )}
                 {/* 买入价格 - 仅显示点，不连线，带百分比标签 */}
                 <Line
                   type="monotone"

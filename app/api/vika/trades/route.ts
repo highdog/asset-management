@@ -49,13 +49,13 @@ export async function GET(request: Request) {
 
       const tradeData = records.map((record: any) => {
         const fields = record.fields || {};
-        // 买入日期是时间戳，需要转换为日期字符串
+        // 买入日期是时间戳，需要转换为 ISO 格式 (YYYY-MM-DD)
         let buyDate = '';
         if (fields['买入日期']) {
           const timestamp = fields['买入日期'];
           if (typeof timestamp === 'number') {
             const date = new Date(timestamp);
-            buyDate = date.toLocaleDateString('zh-CN');
+            buyDate = date.toISOString().split('T')[0];
           } else {
             buyDate = String(fields['买入日期']) || '';
           }
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
           const timestamp = fields['卖出日期'];
           if (typeof timestamp === 'number') {
             const date = new Date(timestamp);
-            sellDate = date.toLocaleDateString('zh-CN');
+            sellDate = date.toISOString().split('T')[0];
           } else {
             sellDate = String(fields['卖出日期']) || '';
           }
