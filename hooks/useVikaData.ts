@@ -6,6 +6,46 @@ const COMPLETED_TRADES_CACHE_KEY = 'vika_completed_trades_cache';
 const KLINE_CACHE_KEY = 'vika_kline_cache';
 const CACHE_EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 小时
 
+// 请求队列管理 - 限制并发请求数量和请求频率
+const REQUEST_QUEUE: Array<() => Promise<any>> = [];
+let ACTIVE_REQUESTS = 0;
+const MAX_CONCURRENT_REQUESTS = 1; // 最多同时发送1个请求，严格控制频率
+const REQUEST_DELAY = 600; // 请求间延迟600ms，避免触发频率限制
+let LAST_REQUEST_TIME = 0;
+
+function addToQueue(requestFn: () => Promise<any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    REQUEST_QUEUE.push(async () => {
+      try {
+        // 检查请求间延迟
+        const timeSinceLastRequest = Date.now() - LAST_REQUEST_TIME;
+        if (timeSinceLastRequest < REQUEST_DELAY) {
+          await new Promise(r => setTimeout(r, REQUEST_DELAY - timeSinceLastRequest));
+        }
+        LAST_REQUEST_TIME = Date.now();
+        const result = await requestFn();
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+    });
+    processQueue();
+  });
+}
+
+function processQueue() {
+  while (ACTIVE_REQUESTS < MAX_CONCURRENT_REQUESTS && REQUEST_QUEUE.length > 0) {
+    ACTIVE_REQUESTS++;
+    const requestFn = REQUEST_QUEUE.shift();
+    if (requestFn) {
+      requestFn().finally(() => {
+        ACTIVE_REQUESTS--;
+        processQueue();
+      });
+    }
+  }
+}
+
 interface CacheData<T> {
   data: T;
   timestamp: number;
@@ -62,8 +102,10 @@ export function useAssets() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/vika/assets');
-      const result = await response.json();
+      const result = await addToQueue(async () => {
+        const response = await fetch('/api/vika/assets');
+        return response.json();
+      });
 
       if (result.success) {
         setAssets(result.data);
@@ -111,8 +153,10 @@ export function useTrades(selectedAsset: string) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/vika/trades?asset=${encodeURIComponent(selectedAsset)}`);
-      const result = await response.json();
+      const result = await addToQueue(async () => {
+        const response = await fetch(`/api/vika/trades?asset=${encodeURIComponent(selectedAsset)}`);
+        return response.json();
+      });
 
       if (result.success) {
         setTrades(result.data);
@@ -161,8 +205,10 @@ export function useCompletedTrades(selectedAsset: string) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/vika/completed-trades?asset=${encodeURIComponent(selectedAsset)}`);
-      const result = await response.json();
+      const result = await addToQueue(async () => {
+        const response = await fetch(`/api/vika/completed-trades?asset=${encodeURIComponent(selectedAsset)}`);
+        return response.json();
+      });
 
       if (result.success) {
         setCompletedTrades(result.data);
@@ -211,8 +257,10 @@ export function useKlineData(secid: string) {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/kline?secid=${encodeURIComponent(secid)}`);
-      const result = await response.json();
+      const result = await addToQueue(async () => {
+        const response = await fetch(`/api/kline?secid=${encodeURIComponent(secid)}`);
+        return response.json();
+      });
 
       if (result.success) {
         setKlineData(result.data);
@@ -238,10 +286,19 @@ export function useKlineData(secid: string) {
 
   return { klineData, loading, error, fetchKline };
 }
+
+// 为 AssetList 等直接调用 API 的地方提供的函数，自动使用请求队列
+export async function fetchTradesWithQueue(asset: string): Promise<any> {
+  return addToQueue(async () => {
+    const response = await fetch(`/api/vika/trades?asset=${encodeURIComponent(asset)}`);
+    return response.json();
+  });
+}
+
 export function clearAllCache(): void {
   try {
     localStorage.removeItem(ASSETS_CACHE_KEY);
-    // 清空所有交易记录缓存
+    // 清空所有交易记录缓存，但不清空K线缓存
     const keys = Object.keys(localStorage);
     keys.forEach(key => {
       if (key.startsWith(TRADES_CACHE_KEY) || key.startsWith(COMPLETED_TRADES_CACHE_KEY)) {
@@ -250,5 +307,25 @@ export function clearAllCache(): void {
     });
   } catch (error) {
     console.error('清空缓存失败:', error);
+  }
+}
+
+// 清空K线缓存（仅在显式刷新K线时调用）
+export function clearKlineCache(secid?: string): void {
+  try {
+    if (secid) {
+      // 清空特定证券的K线缓存
+      localStorage.removeItem(`${KLINE_CACHE_KEY}_${secid}`);
+    } else {
+      // 清空所有K线缓存
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith(KLINE_CACHE_KEY)) {
+          localStorage.removeItem(key);
+        }
+      });
+    }
+  } catch (error) {
+    console.error('清空K线缓存失败:', error);
   }
 }

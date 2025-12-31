@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useTrades, useCompletedTrades, clearAllCache, useAssets, useKlineData } from '@/hooks/useVikaData';
+import { useTrades, useCompletedTrades, clearAllCache, useAssets, useKlineData, clearKlineCache } from '@/hooks/useVikaData';
 import { secidMapping } from '@/lib/secidMapping';
 import {
   LineChart,
@@ -59,7 +59,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   const { completedTrades, loading: completedLoading, error: completedError, fetchCompletedTrades } = useCompletedTrades(selectedAsset);
   const { assets, loading: assetsLoading, fetchAssets } = useAssets();
   const [secid, setSecid] = useState<string>(''); // 东财证券ID
-  const { klineData, loading: klineLoading } = useKlineData(secid); // 获取K线数据
+  const { klineData, loading: klineLoading, fetchKline } = useKlineData(secid); // 获取K线数据及刷新函数
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [zoomStartIndex, setZoomStartIndex] = useState(0);
   const [zoomEndIndex, setZoomEndIndex] = useState(-1);
@@ -82,7 +82,19 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   }, [selectedAsset, assets]);
 
   useEffect(() => {
-    if (!selectedAsset || (!trades || trades.length === 0) && (!completedTrades || completedTrades.length === 0)) {
+    if (!selectedAsset) {
+      setChartData([]);
+      setZoomStartIndex(0);
+      setZoomEndIndex(-1);
+      setCurrentPrice(null);
+      setCostPrice(null);
+      return;
+    }
+
+    // 如果没有任何数据（交易记录和K线数据都为空），就返回
+    const hasTradeData = (trades && trades.length > 0) || (completedTrades && completedTrades.length > 0);
+    const hasKlineData = klineData && klineData.klines && klineData.klines.length > 0;
+    if (!hasTradeData && !hasKlineData) {
       setChartData([]);
       setZoomStartIndex(0);
       setZoomEndIndex(-1);
@@ -201,13 +213,20 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   }, [selectedAsset, trades, completedTrades, assets, klineData]);
 
   const handleRefresh = async () => {
-    // 清除旧的缓存，强制从 API 获取最新数据
+    // 清除旧的交易数据缓存，强制从 API 获取最新数据
     clearAllCache();
     // 同时刷新两个数据源
     const [tradesResult] = await Promise.all([
       fetchTrades(true),
       fetchCompletedTrades(true)
     ]);
+  };
+
+  // 这个函数一旧未使用，但留为将来扩展
+  const handleRefreshKline = async () => {
+    // 清除特定K线缓存，强制从 API 获取
+    clearKlineCache(secid);
+    await fetchKline(true);
   };
 
   const handleRefreshPrice = async () => {

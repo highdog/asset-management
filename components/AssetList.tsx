@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAssets, useTrades } from '@/hooks/useVikaData';
+import { useAssets, useTrades, fetchTradesWithQueue } from '@/hooks/useVikaData';
 
 type TabType = '全览' | '股票' | '债券' | '理财' | '商品';
 
@@ -31,11 +31,9 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
       const newCostPrices: { [key: string]: number } = {};
       
       for (const asset of assets) {
-        // 使用 useTrades hook 获取每个标的的交易数据
-        // 但由于 hook 不能在循环中使用，我们直接调用 API
+        // \u4f7f\u7528\u8bf7\u6c42\u961f\u5217\u7ba1\u7406\u7684 fetchTradesWithQueue \u51fd\u6570\uff0c\u9650\u5236\u8bf7\u6c42\u9891\u7387
         try {
-          const response = await fetch(`/api/vika/trades?asset=${encodeURIComponent(asset.标的名称)}`);
-          const result = await response.json();
+          const result = await fetchTradesWithQueue(asset.\u6807\u7684\u540d\u79f0);
           
           if (result.success && result.data) {
             const trades = result.data;
