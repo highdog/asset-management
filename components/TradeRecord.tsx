@@ -140,7 +140,26 @@ export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
             {recordList.filter((r) => r.status === 'completed').length > 0 && (
               <div>
                 <div className="px-4 py-3 bg-blue-100 sticky top-0 z-10">
-                  <h3 className="font-semibold text-sm text-gray-900">已完成交易</h3>
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-semibold text-sm text-gray-900">已完成交易</h3>
+                  </div>
+                  {/* 已完成交易统计 */}
+                  <div className="grid grid-cols-2 gap-3 text-xs bg-white rounded p-2 mt-2">
+                    <div>
+                      <p className="text-gray-600">交易笔数</p>
+                      <p className="font-semibold text-gray-900">{recordList.filter((r) => r.status === 'completed').length / 2}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">总盈亏</p>
+                      <p className={`font-semibold ${
+                        completedTrades?.reduce((sum, t) => sum + t.盈亏金额, 0) ?? 0 >= 0
+                          ? 'text-green-600'
+                          : 'text-red-600'
+                      }`}>
+                        ¥{(completedTrades?.reduce((sum, t) => sum + t.盈亏金额, 0) ?? 0).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
                 {recordList
                   .filter((r) => r.status === 'completed')

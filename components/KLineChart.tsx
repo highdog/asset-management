@@ -68,6 +68,8 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [costPrice, setCostPrice] = useState<number | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
+  const [latestKlineDate, setLatestKlineDate] = useState<string>(''); // 最新K线日期
+  const [latestKlinePrice, setLatestKlinePrice] = useState<number | null>(null); // 最新K线价格
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   // 提取所选标的东财证券ID
@@ -126,6 +128,11 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     // 首先添加K线数据（作为K线离的背景）和计算60日均线
     if (klineData && klineData.klines && klineData.klines.length > 0) {
       const klinesArray = klineData.klines;
+      
+      // 获取最新的K线日期和价格
+      const latestKline = klinesArray[klinesArray.length - 1];
+      setLatestKlineDate(latestKline.date);
+      setLatestKlinePrice(latestKline.close);
       
       // 计算60日均线
       klinesArray.forEach((kline: any, index: number) => {
@@ -477,6 +484,11 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
           <h2 className="text-lg font-semibold text-gray-900">
             {selectedAsset ? `${selectedAsset} - 买卖价格走势` : '请选择标的'}
           </h2>
+          {latestKlineDate && latestKlinePrice !== null && (
+            <p className="text-sm text-gray-600 mt-1">
+              东财最新价格：¥{latestKlinePrice.toFixed(3)} (日期: {latestKlineDate})
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -586,7 +598,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   stroke="#3b82f6"
                   strokeDasharray="5 5"
                   dot={<CompletedBuyDot />}
-                  connectNulls
+                  connectNulls={false}
                 />
                 {/* 已完成卖出价格 - 虚线 */}
                 <Line
@@ -595,7 +607,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   stroke="#f97316"
                   strokeDasharray="5 5"
                   dot={<CompletedSellDot />}
-                  connectNulls
+                  connectNulls={false}
                 />
                 {/* 已60日均线 - 改成实线 */}
                 <Line
@@ -744,59 +756,6 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
             </div>
           </div>
           <p className="text-xs text-gray-500">💡 提示：滚动鼠标滚轮或使用触控板可以放大/缩小时间段</p>
-        </div>
-      )}
-
-      {/* Trade Summary */}
-      {selectedAsset && (trades?.length > 0 || completedTrades?.length > 0) && (
-        <div className="mt-4 bg-gray-50 rounded p-3">
-          <h3 className="font-semibold text-sm text-gray-900 mb-2">交易统计</h3>
-          <div className="grid grid-cols-2 gap-4">
-            {/* 未完成交易 */}
-            {trades && trades.length > 0 && (
-              <div className="border-r pr-4">
-                <h4 className="font-medium text-xs text-gray-700 mb-2">未完成交易</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <p className="text-gray-600">交易笔数</p>
-                    <p className="font-semibold text-gray-900">{trades.length}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">总盈亏</p>
-                    <p className={`font-semibold ${
-                      trades.reduce((sum, t) => sum + t.盈亏金额, 0) >= 0
-                        ? 'text-green-600'
-                        : 'text-red-600'
-                    }`}>
-                      ¥{trades.reduce((sum, t) => sum + t.盈亏金额, 0).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* 已完成交易 */}
-            {completedTrades && completedTrades.length > 0 && (
-              <div className="pl-4">
-                <h4 className="font-medium text-xs text-gray-700 mb-2">已完成交易</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <p className="text-gray-600">交易笔数</p>
-                    <p className="font-semibold text-gray-900">{completedTrades.length}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">总盈亏</p>
-                    <p className={`font-semibold ${
-                      completedTrades.reduce((sum, t) => sum + t.盈亏金额, 0) >= 0
-                        ? 'text-green-600'
-                        : 'text-red-600'
-                    }`}>
-                      ¥{completedTrades.reduce((sum, t) => sum + t.盈亏金额, 0).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       )}
     </div>
