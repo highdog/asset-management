@@ -46,6 +46,9 @@ interface ChartPoint {
   high?: number; // 最高价
   low?: number; // 最低价
   volume?: number; // 成交量
+  ma60?: number; // 60日均线
+  ma60Plus15?: number; // MA60 + 15%
+  ma60Minus15?: number; // MA60 - 15%
 }
 
 interface KLineChartProps {
@@ -120,10 +123,13 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     // 构建图表数据
     const chartPoints: { [key: string]: ChartPoint } = {};
 
-    // 首先添加K线数据（作为K线离的背景）
+    // 首先添加K线数据（作为K线离的背景）和计算60日均线
     if (klineData && klineData.klines && klineData.klines.length > 0) {
-      klineData.klines.forEach((kline: any) => {
-        const dateStr = kline.date; // K线数据的日期格式是 YYYY-MM-DD
+      const klinesArray = klineData.klines;
+      
+      // 计算60日均线
+      klinesArray.forEach((kline: any, index: number) => {
+        const dateStr = kline.date;
         if (!chartPoints[dateStr]) {
           chartPoints[dateStr] = { date: dateStr };
         }
@@ -133,7 +139,17 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         chartPoints[dateStr].high = kline.high;
         chartPoints[dateStr].low = kline.low;
         chartPoints[dateStr].volume = kline.volume;
+        
+        // 计算60日均线（取过去60天的收盘价平均值）
+        const startIndex = Math.max(0, index - 59);
+        const closePrices = klinesArray.slice(startIndex, index + 1).map((k: any) => k.close);
+        const ma60 = closePrices.reduce((sum: number, price: number) => sum + price, 0) / closePrices.length;
+        chartPoints[dateStr].ma60 = parseFloat(ma60.toFixed(3));
+        // 计算MA60的±15%平行线
+        chartPoints[dateStr].ma60Plus15 = parseFloat((ma60 * 1.15).toFixed(3));
+        chartPoints[dateStr].ma60Minus15 = parseFloat((ma60 * 0.85).toFixed(3));
       });
+      // 不再计算平大5的平均值，改为使用线条数据
     }
 
     // 然后添加未完成的交易记录
@@ -503,7 +519,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
           chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={displayData} margin={{ top: 20, right: 100, bottom: 20, left: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 12 }}
@@ -531,12 +547,12 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   }}
                 />
                 <Legend />
-                {/* K线收盘价 - 作为背景线 */}
+                {/* K线收盘价 - 改成蓝色 */}
                 {klineData && klineData.klines && klineData.klines.length > 0 && (
                   <Line
                     type="monotone"
                     dataKey="close"
-                    stroke="#d1d5db"
+                    stroke="#3b82f6"
                     strokeWidth={1}
                     dot={false}
                     connectNulls
@@ -581,12 +597,24 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   dot={<CompletedSellDot />}
                   connectNulls
                 />
-                {/* 当前价格线 */}
+                {/* 已60日均线 - 改成实线 */}
+                <Line
+                  type="monotone"
+                  dataKey="ma60"
+                  stroke="#ec4899"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                  name="60日均线"
+                />
+                {/* 当前价格线 - 改成虚线 */}
                 {currentPrice !== null && (
                   <ReferenceLine
                     y={currentPrice}
                     stroke="#8b5cf6"
                     strokeWidth={2}
+                    strokeDasharray="5 5"
                     label={{
                       value: `当前价格: ¥${currentPrice.toFixed(3)}`,
                       position: 'right',
@@ -595,12 +623,13 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                     }}
                   />
                 )}
-                {/* 持仓成本线 */}
+                {/* 持仓成本线 - 改成虚线 */}
                 {costPrice !== null && (
                   <ReferenceLine
                     y={costPrice}
                     stroke="#f59e0b"
                     strokeWidth={2}
+                    strokeDasharray="5 5"
                     label={{
                       value: `持仓成本: ¥${costPrice.toFixed(3)}`,
                       position: 'right',
@@ -609,6 +638,31 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                     }}
                   />
                 )}
+                {/* MA60 ±15% 平行线 - 跟随MA60的走势变化 */}
+                {/* MA60 + 15% */}
+                <Line
+                  type="monotone"
+                  dataKey="ma60Plus15"
+                  stroke="#06b6d4"
+                  strokeWidth={1}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                  name="MA60+15%"
+                />
+                {/* MA60 - 15% */}
+                <Line
+                  type="monotone"
+                  dataKey="ma60Minus15"
+                  stroke="#f97316"
+                  strokeWidth={1}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                  name="MA60-15%"
+                />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
