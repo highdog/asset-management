@@ -241,13 +241,8 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
 
   // 刷新东财数据 - 同时获取最新K线和价格
   const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      clearKlineCache(secid);
-      await fetchKline(true);
-    } finally {
-      setLoading(false);
-    }
+    clearKlineCache(secid);
+    await fetchKline(true);
   };
 
   // 处理鼠标滚轮缩放
@@ -277,17 +272,31 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     ? chartData.slice(Math.max(0, zoomStartIndex), Math.min(chartData.length, zoomEndIndex + 1))
     : chartData;
 
-  // 计算价格相对于当前价格的百分比 (当前价格 / 交易价格 - 1)
+  // 获取价格百分比（当前价格除以交易价格-1）
   const getPricePercentage = (price: number | undefined): string => {
     if (!price || currentPrice === null) return '';
     const ratio = (currentPrice / price - 1) * 100;
     return ratio > 0 ? `+${ratio.toFixed(2)}%` : `${ratio.toFixed(2)}%`;
   };
-
-  // 获取百分比的颜色（负数为红色、正数为绿色）
+  
+  // 计算成本价和当前价格的百分比
+  const getCostPercentage = (): string => {
+    if (!costPrice || currentPrice === null) return '';
+    const ratio = (currentPrice / costPrice - 1) * 100;
+    return ratio > 0 ? `+${ratio.toFixed(2)}%` : `${ratio.toFixed(2)}%`;
+  };
+  
+  // 计算百分比的颜色（負数为红色、正数为绿色）
   const getPercentageColor = (price: number | undefined): string => {
     if (!price || currentPrice === null) return '#10b981';
     const ratio = (currentPrice / price - 1) * 100;
+    return ratio > 0 ? '#10b981' : '#ef4444';
+  };
+  
+  // 计算成本价和当前价格百分比的颜色
+  const getCostPercentageColor = (): string => {
+    if (!costPrice || currentPrice === null) return '#10b981';
+    const ratio = (currentPrice / costPrice - 1) * 100;
     return ratio > 0 ? '#10b981' : '#ef4444';
   };
 
@@ -483,11 +492,11 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
           )}
           <button
             onClick={handleRefresh}
-            disabled={loading}
+            disabled={klineLoading}
             className="text-sm px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             title="从东财刷新K线和价格数据"
           >
-            {loading ? '刷新中...' : '刷新'}
+            {klineLoading ? '刷新中...' : '刷新'}
           </button>
         </div>
       </div>
@@ -571,7 +580,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         onWheel={handleWheel}
         style={{ touchAction: 'none' }}
       >
-        {loading || completedLoading ? (
+        {klineLoading || completedLoading ? (
           <div className="text-center">
             <p className="text-gray-600">加载中...</p>
           </div>
@@ -668,7 +677,7 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                   isAnimationActive={false}
                   name="60日均线"
                 />
-                {/* 当前价格线 - 改成虚线 */}
+                {/* 当前价格线 - 改成虫线 */}
                 {currentPrice !== null && (
                   <ReferenceLine
                     y={currentPrice}
@@ -683,20 +692,38 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
                     }}
                   />
                 )}
-                {/* 持仓成本线 - 改成虚线 */}
+                {/* 持仓成本线 - 改成虫线 */}
                 {costPrice !== null && (
-                  <ReferenceLine
-                    y={costPrice}
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    label={{
-                      value: `持仓成本: ¥${costPrice.toFixed(3)}`,
-                      position: 'right',
-                      fill: '#f59e0b',
-                      fontSize: 12,
-                    }}
-                  />
+                  <>
+                    <ReferenceLine
+                      y={costPrice}
+                      stroke="#f59e0b"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      label={{
+                        value: `持仓成本: ¥${costPrice.toFixed(3)}`,
+                        position: 'right',
+                        fill: '#f59e0b',
+                        fontSize: 12,
+                      }}
+                    />
+                    {/* 中間住于成本价、当前价和平均上一个标签显示百分比 */}
+                    {currentPrice !== null && (
+                      <>
+                        <ReferenceLine
+                          y={(costPrice + currentPrice) / 2}
+                          stroke="transparent"
+                          label={{
+                            value: getCostPercentage(),
+                            position: 'right',
+                            fill: getCostPercentageColor(),
+                            fontSize: 12,
+                            fontWeight: 600,
+                          }}
+                        />
+                      </>
+                    )}
+                  </>
                 )}
                 {/* MA60 ±15% 平行线 - 跟随MA60的走势变化 */}
                 {/* MA60 + 15% */}
