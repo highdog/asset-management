@@ -104,11 +104,20 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
       return;
     }
 
-    // 获取当前价格
-    const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
-    if (asset) {
-      setCurrentPrice(parseFloat(asset['当前价格']) || null);
+    // 获取当前价格 - 使用东财最新价格
+    let currentPriceValue: number | null = null;
+    if (klineData && klineData.klines && klineData.klines.length > 0) {
+      // 从K线数据中直接获取最新价格（不依赖状态，避免延迟）
+      const latestKline = klineData.klines[klineData.klines.length - 1];
+      currentPriceValue = latestKline.close;
+    } else {
+      // 如果没有K线数据，使用Vika的当前价格
+      const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
+      if (asset) {
+        currentPriceValue = parseFloat(asset['当前价格']) || null;
+      }
     }
+    setCurrentPrice(currentPriceValue);
 
     // 计算持仓价格（未完成交易的平均成本）
     let totalCost = 0;

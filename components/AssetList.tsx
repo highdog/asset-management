@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAssets, useTrades, fetchTradesWithQueue } from '@/hooks/useVikaData';
+import { useAssets, useTrades, fetchTradesWithQueue, useKlineData } from '@/hooks/useVikaData';
 
 type TabType = '全览' | '股票' | '债券' | '理财' | '商品';
 
@@ -29,7 +29,8 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
   const [assetTradesData, setAssetTradesData] = useState<{ [key: string]: any[] }>({});
   // 添加展开/收起状态
   const [expandedGroups, setExpandedGroups] = useState<{ [key: string]: boolean }>({});
-
+  // 添加东财最新价格存储
+  const [eastmoneyPrices, setEastmoneyPrices] = useState<{ [key: string]: number | null }>({});
   // 为每个标的获取交易数据并计算持仓成本
   useEffect(() => {
     const calculateCostPrices = async () => {
@@ -88,9 +89,43 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
     }));
   };
 
+  // 获取每个标的的东财最新价格
+  useEffect(() => {
+    const getEastmoneyPrices = async () => {
+      const newPrices: { [key: string]: number | null } = {};
+      
+      for (const asset of assets) {
+        try {
+          if (asset['东财证券ID']) {
+            const response = await fetch(`/api/kline?secid=${asset['东财证券ID']}&lmt=1`);
+            const data = await response.json();
+            
+            if (data.success && data.data.klines && data.data.klines.length > 0) {
+              const latestKline = data.data.klines[data.data.klines.length - 1];
+              newPrices[asset.标的名称] = latestKline.close;
+            } else {
+              newPrices[asset.标的名称] = null;
+            }
+          } else {
+            newPrices[asset.标的名称] = null;
+          }
+        } catch (err) {
+          console.error(`获取 ${asset.标的名称} 的东财价格失败:`, err);
+          newPrices[asset.标的名称] = null;
+        }
+      }
+      
+      setEastmoneyPrices(newPrices);
+    };
+    
+    if (assets.length > 0) {
+      getEastmoneyPrices();
+    }
+  }, [assets]);
   // 计算显示的百分比
   const getPercentage = (asset: Asset): string | null => {
-    const currentPrice = asset.当前价格 ? Number(asset.当前价格) : null;
+    const eastmoneyPrice = eastmoneyPrices[asset.标的名称];
+    const currentPrice = eastmoneyPrice || (asset.当前价格 ? Number(asset.当前价格) : null);
     const costPrice = costPrices[asset.标的名称];
     
     if (!currentPrice || !costPrice) return null;
@@ -101,7 +136,8 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
 
   // 获取百分比颜色
   const getPercentageColor = (asset: Asset): string => {
-    const currentPrice = asset.当前价格 ? Number(asset.当前价格) : null;
+    const eastmoneyPrice = eastmoneyPrices[asset.标的名称];
+    const currentPrice = eastmoneyPrice || (asset.当前价格 ? Number(asset.当前价格) : null);
     const costPrice = costPrices[asset.标的名称];
     
     if (!currentPrice || !costPrice) return '#6b7280';
@@ -181,7 +217,7 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
                               <span className="text-xs text-gray-500">{asset.标的代码}</span>
                             </div>
                             <div className="text-xs text-gray-600">
-                              ¥{Number(asset.当前价格 || 0).toFixed(3)}
+                              ¥{(eastmoneyPrices[asset.标的名称] ?? Number(asset.当前价格 || 0)).toFixed(3)}
                             </div>
                           </div>
                           
@@ -191,7 +227,7 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
                               <span>¥{asset.持有金额?.toFixed(0) || '0'}</span>
                               <span>{(asset.比例 ? asset.比例 * 100 : 0).toFixed(2)}%</span>
                             </div>
-                            {asset.当前价格 && costPrices[asset.标的名称] && (
+                            {(eastmoneyPrices[asset.标的名称] !== null || asset.当前价格) && costPrices[asset.标的名称] && (
                               <span
                                 className="text-xs font-medium"
                                 style={{ color: getPercentageColor(asset) }}
