@@ -123,6 +123,12 @@ export function useAssets() {
 
   // 初始化时加载
   useEffect(() => {
+    // 开发环境下清除缓存，确保获取最新数据
+    try {
+      localStorage.removeItem('vika_assets_cache');
+    } catch (e) {
+      // 忽略清除缓存的错误
+    }
     fetchAssets();
   }, []);
 
@@ -298,6 +304,7 @@ export async function fetchTradesWithQueue(asset: string): Promise<any> {
 export function clearAllCache(): void {
   try {
     localStorage.removeItem(ASSETS_CACHE_KEY);
+    localStorage.removeItem('vika_assets_cache'); // 也清除这个键
     // 清空所有交易记录缓存，但不清空K线缓存
     const keys = Object.keys(localStorage);
     keys.forEach(key => {

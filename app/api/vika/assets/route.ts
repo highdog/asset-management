@@ -30,6 +30,7 @@ export async function GET(request: Request) {
           比例: parseFloat(fields['比例']) || 0,
           总金额: parseFloat(fields['总金额']) || 0,
           东财证券ID: fields['标的代码'] || '', // 使用标的代码作为东财证券ID
+          类型: fields['类型'] || '其他', // 获取标的类型
         };
       }).filter(asset => asset.标的名称); // 仅保留有标的名称的记录
 

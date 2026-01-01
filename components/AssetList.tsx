@@ -15,7 +15,10 @@ interface Asset {
   recordId: string;
   标的名称: string;
   标的代码: string;
-  当前价格?: string;
+  当前价格?: string | number;
+  类型?: string; // 添加类型字段
+  持有金额?: number; // 添加持有金额
+  比例?: number; // 添加比例
 }
 
 export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: AssetListProps) {
@@ -24,6 +27,8 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
   // 这里我们创建一个状态来存储每个标的的持仓成本
   const [costPrices, setCostPrices] = useState<{ [key: string]: number }>({});
   const [assetTradesData, setAssetTradesData] = useState<{ [key: string]: any[] }>({});
+  // 添加展开/收起状态
+  const [expandedGroups, setExpandedGroups] = useState<{ [key: string]: boolean }>({});
 
   // 为每个标的获取交易数据并计算持仓成本
   useEffect(() => {
@@ -66,12 +71,26 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
   }, [assets]);
 
   const handleRefresh = async () => {
+    // 清除缓存后刷新
+    try {
+      localStorage.removeItem('vika_assets_cache');
+    } catch (e) {
+      // 忽略清除缓存的错误
+    }
     await fetchAssets(true); // 强制刷新
+  };
+
+  // 切换分组的展开/收起状态
+  const toggleGroup = (type: string) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [type]: !prev[type],
+    }));
   };
 
   // 计算显示的百分比
   const getPercentage = (asset: Asset): string | null => {
-    const currentPrice = asset.当前价格 ? parseFloat(asset.当前价格) : null;
+    const currentPrice = asset.当前价格 ? Number(asset.当前价格) : null;
     const costPrice = costPrices[asset.标的名称];
     
     if (!currentPrice || !costPrice) return null;
@@ -82,7 +101,7 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
 
   // 获取百分比颜色
   const getPercentageColor = (asset: Asset): string => {
-    const currentPrice = asset.当前价格 ? parseFloat(asset.当前价格) : null;
+    const currentPrice = asset.当前价格 ? Number(asset.当前价格) : null;
     const costPrice = costPrices[asset.标的名称];
     
     if (!currentPrice || !costPrice) return '#6b7280';
@@ -113,35 +132,81 @@ export default function AssetList({ activeTab, selectedAsset, onSelectAsset }: A
         {loading ? (
           <div className="p-4 text-center text-gray-500 text-sm">加载中...</div>
         ) : assets.length > 0 ? (
-          assets.map((asset) => (
-            <button
-              key={asset.recordId}
-              onClick={() => onSelectAsset(asset.标的名称)}
-              className={`w-full px-4 py-3 text-left border-b border-gray-100 hover:bg-blue-50 transition-colors ${
-                selectedAsset === asset.标的名称 ? 'bg-blue-100' : ''
-              }`}
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex-1">
-                  <div className="font-medium text-sm text-gray-900">{asset.标的名称}</div>
-                  <div className="text-xs text-gray-500 mt-1">{asset.标的代码}</div>
-                </div>
-                {asset.当前价格 && costPrices[asset.标的名称] && (
-                  <div className="ml-4 flex flex-col items-end">
-                    <span className="text-xs text-gray-600">
-                      ¥{parseFloat(asset.当前价格).toFixed(3)}
-                    </span>
-                    <span
-                      className="text-xs font-medium mt-1"
-                      style={{ color: getPercentageColor(asset) }}
+          <div>
+            {Array.from(new Set(assets.map((a) => a.类型 || '其他')))
+              .sort((a, b) => {
+                // 排序顺序：股票、债券、理财、商品、其他
+                const order = { '股票': 0, '债券': 1, '理财': 2, '商品': 3, '其他': 4 };
+                return (order[a as keyof typeof order] || 4) - (order[b as keyof typeof order] || 4);
+              })
+              .map((type) => {
+                // 计算该分组的合计金额和合计比例
+                const groupAssets = assets.filter((asset) => (asset.类型 || '其他') === type);
+                const totalAmount = groupAssets.reduce((sum, asset) => sum + (asset.持有金额 || 0), 0);
+                const totalRatio = groupAssets.reduce((sum, asset) => sum + (asset.比例 || 0), 0);
+                const isExpanded = expandedGroups[type] !== false; // 默认展开
+                
+                return (
+                  <div key={type}>
+                    {/* 分组标题 - 深灰色背景 */}
+                    <button
+                      onClick={() => toggleGroup(type)}
+                      className="w-full px-4 py-3 bg-gray-700 hover:bg-gray-800 sticky top-0 z-10 flex justify-between items-center transition-colors"
                     >
-                      {getPercentage(asset)}
-                    </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-semibold text-sm">
+                          {isExpanded ? '▼' : '▶'} {type}
+                        </span>
+                      </div>
+                      <div className="text-white text-xs font-medium">
+                        <span>¥{totalAmount.toFixed(0)}</span>
+                        <span className="ml-3">{(totalRatio * 100).toFixed(2)}%</span>
+                      </div>
+                    </button>
+                    
+                    {/* 标的列表 */}
+                    {isExpanded && groupAssets.map((asset) => (
+                      <button
+                        key={asset.recordId}
+                        onClick={() => onSelectAsset(asset.标的名称)}
+                        className={`w-full px-4 py-3 text-left border-b border-gray-200 hover:bg-blue-50 transition-colors ${
+                          selectedAsset === asset.标的名称 ? 'bg-blue-100' : 'bg-white'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          {/* 第一行：标的名称和代码（左侧），当前价格（右侧） */}
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm text-gray-900">{asset.标的名称}</span>
+                              <span className="text-xs text-gray-500">{asset.标的代码}</span>
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              ¥{Number(asset.当前价格 || 0).toFixed(3)}
+                            </div>
+                          </div>
+                          
+                          {/* 第二行：持有金额和比例（左侧），涨跌幅（右侧） */}
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-4 text-xs text-gray-600">
+                              <span>¥{asset.持有金额?.toFixed(0) || '0'}</span>
+                              <span>{(asset.比例 ? asset.比例 * 100 : 0).toFixed(2)}%</span>
+                            </div>
+                            {asset.当前价格 && costPrices[asset.标的名称] && (
+                              <span
+                                className="text-xs font-medium"
+                                style={{ color: getPercentageColor(asset) }}
+                              >
+                                {getPercentage(asset)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-            </button>
-          ))
+                );
+              })}
+          </div>
         ) : (
           <div className="p-4 text-center text-gray-500 text-sm">暂无标的数据</div>
         )}
