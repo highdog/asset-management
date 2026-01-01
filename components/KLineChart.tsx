@@ -67,7 +67,6 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
   const [zoomEndIndex, setZoomEndIndex] = useState(-1);
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [costPrice, setCostPrice] = useState<number | null>(null);
-  const [priceLoading, setPriceLoading] = useState(false);
   const [latestKlineDate, setLatestKlineDate] = useState<string>(''); // 最新K线日期
   const [latestKlinePrice, setLatestKlinePrice] = useState<number | null>(null); // 最新K线价格
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -240,32 +239,14 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
     setZoomEndIndex(Math.min(dateRange.length - 1, start + defaultDays + padding - 1));
   }, [selectedAsset, trades, completedTrades, assets, klineData]);
 
+  // 刷新东财数据 - 同时获取最新K线和价格
   const handleRefresh = async () => {
-    // 清除旧的交易数据缓存，强制从 API 获取最新数据
-    clearAllCache();
-    // 同时刷新两个数据源
-    const [tradesResult] = await Promise.all([
-      fetchTrades(true),
-      fetchCompletedTrades(true)
-    ]);
-  };
-
-  // 这个函数一旧未使用，但留为将来扩展
-  const handleRefreshKline = async () => {
-    // 清除特定K线缓存，强制从 API 获取
-    clearKlineCache(secid);
-    await fetchKline(true);
-  };
-
-  const handleRefreshPrice = async () => {
-    // 刷新所有标的的当前价格
-    setPriceLoading(true);
+    setLoading(true);
     try {
-      // 清除标的列表缓存，强制重新获取所有标的的当前价格
-      localStorage.removeItem('vika_assets_cache');
-      await fetchAssets(true);
+      clearKlineCache(secid);
+      await fetchKline(true);
     } finally {
-      setPriceLoading(false);
+      setLoading(false);
     }
   };
 
@@ -488,33 +469,25 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
 
   return (
     <div className="h-full flex flex-col bg-white p-4 overflow-hidden">
-      <div className="mb-4 flex justify-between items-start">
-        <div>
+      <div className="mb-4 flex justify-between items-center">
+        <div className="flex-1">
           <h2 className="text-lg font-semibold text-gray-900">
             {selectedAsset ? `${selectedAsset} - 买卖价格走势` : '请选择标的'}
           </h2>
+        </div>
+        <div className="flex items-center gap-4 flex-shrink-0">
           {latestKlineDate && latestKlinePrice !== null && (
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-gray-600 whitespace-nowrap">
               东财最新价格：¥{latestKlinePrice.toFixed(3)} (日期: {latestKlineDate})
             </p>
           )}
-        </div>
-        <div className="flex gap-2">
           <button
             onClick={handleRefresh}
-            disabled={loading || completedLoading}
-            className="text-sm px-3 py-1 rounded bg-green-100 hover:bg-green-200 text-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="刷新交易数据"
+            disabled={loading}
+            className="text-sm px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            title="从东财刷新K线和价格数据"
           >
-            {loading || completedLoading ? '刷新中...' : '刷新'}
-          </button>
-          <button
-            onClick={handleRefreshPrice}
-            disabled={priceLoading}
-            className="text-sm px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="刷新当前价格"
-          >
-            {priceLoading ? '刷新中...' : '刷新价格'}
+            {loading ? '刷新中...' : '刷新'}
           </button>
         </div>
       </div>
@@ -523,6 +496,72 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
         <div className="bg-red-50 border border-red-200 rounded p-3 mb-4">
           {error && <p className="text-red-700 text-sm">{error}</p>}
           {completedError && <p className="text-red-700 text-sm">{completedError}</p>}
+        </div>
+      )}
+
+      {/* 时间范围显示和快捷按钮 - 放在图表上方 */}
+      {selectedAsset && chartData.length > 0 && (
+        <div className="mb-4 bg-gray-50 rounded p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-700 font-medium">
+              时间范围：{chartData[zoomStartIndex]?.date} 至 {chartData[zoomEndIndex]?.date}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  const span = 30;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                1月
+              </button>
+              <button
+                onClick={() => {
+                  const span = 90;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                3月
+              </button>
+              <button
+                onClick={() => {
+                  const span = 180;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                6月
+              </button>
+              <button
+                onClick={() => {
+                  const span = 365;
+                  const start = Math.max(0, chartData.length - span);
+                  setZoomStartIndex(start);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                1年
+              </button>
+              <button
+                onClick={() => {
+                  setZoomStartIndex(0);
+                  setZoomEndIndex(chartData.length - 1);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
+              >
+                全部
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -700,73 +739,6 @@ export default function KLineChart({ selectedAsset, activeTab }: KLineChartProps
           </div>
         )}
       </div>
-
-      {/* 时间范围显示和快捷按钮 */}
-      {selectedAsset && chartData.length > 0 && (
-        <div className="mt-4 bg-gray-50 rounded p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-700 font-medium">
-              时间范围：{chartData[zoomStartIndex]?.date} 至 {chartData[zoomEndIndex]?.date}
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  const span = 30;
-                  const start = Math.max(0, chartData.length - span);
-                  setZoomStartIndex(start);
-                  setZoomEndIndex(chartData.length - 1);
-                }}
-                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
-              >
-                1月
-              </button>
-              <button
-                onClick={() => {
-                  const span = 90;
-                  const start = Math.max(0, chartData.length - span);
-                  setZoomStartIndex(start);
-                  setZoomEndIndex(chartData.length - 1);
-                }}
-                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
-              >
-                3月
-              </button>
-              <button
-                onClick={() => {
-                  const span = 180;
-                  const start = Math.max(0, chartData.length - span);
-                  setZoomStartIndex(start);
-                  setZoomEndIndex(chartData.length - 1);
-                }}
-                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
-              >
-                6月
-              </button>
-              <button
-                onClick={() => {
-                  const span = 365;
-                  const start = Math.max(0, chartData.length - span);
-                  setZoomStartIndex(start);
-                  setZoomEndIndex(chartData.length - 1);
-                }}
-                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
-              >
-                1年
-              </button>
-              <button
-                onClick={() => {
-                  setZoomStartIndex(0);
-                  setZoomEndIndex(chartData.length - 1);
-                }}
-                className="text-xs px-3 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-700"
-              >
-                全部
-              </button>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500">💡 提示：滚动鼠标滚轮或使用触控板可以放大/缩小时间段</p>
-        </div>
-      )}
     </div>
   );
 }

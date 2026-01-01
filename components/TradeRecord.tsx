@@ -24,10 +24,24 @@ interface TradeRecordProps {
 }
 
 export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
-  const { trades } = useTrades(selectedAsset);
-  const { completedTrades } = useCompletedTrades(selectedAsset);
+  const { trades, fetchTrades, loading: tradesLoading } = useTrades(selectedAsset);
+  const { completedTrades, fetchCompletedTrades, loading: completedLoading } = useCompletedTrades(selectedAsset);
   const [recordList, setRecordList] = useState<TradeRecordItem[]>([]);
   const [completedTradeGroups, setCompletedTradeGroups] = useState<CompletedTradeGroup[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      // 同时刷新未完成和已完成交易
+      await Promise.all([
+        fetchTrades(true),
+        fetchCompletedTrades(true)
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedAsset) {
@@ -92,9 +106,19 @@ export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="font-semibold text-gray-900">交易记录</h2>
-        {selectedAsset && <p className="text-xs text-gray-500 mt-1">{selectedAsset}</p>}
+      <div className="px-4 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+        <div>
+          <h2 className="font-semibold text-gray-900">交易记录</h2>
+          {selectedAsset && <p className="text-xs text-gray-500 mt-1">{selectedAsset}</p>}
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing || tradesLoading || completedLoading}
+          className="text-sm px-3 py-1 rounded bg-purple-100 hover:bg-purple-200 text-purple-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ml-2"
+          title="从Vika刷新交易记录"
+        >
+          {isRefreshing || tradesLoading || completedLoading ? '刷新中...' : '刷新'}
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
