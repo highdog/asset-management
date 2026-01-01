@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useTrades, useCompletedTrades } from '@/hooks/useVikaData';
+import { useTrades, useCompletedTrades, useAssets, useKlineData } from '@/hooks/useVikaData';
 
 interface TradeRecordItem {
   id: string;
@@ -26,9 +26,38 @@ interface TradeRecordProps {
 export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
   const { trades, fetchTrades, loading: tradesLoading } = useTrades(selectedAsset);
   const { completedTrades, fetchCompletedTrades, loading: completedLoading } = useCompletedTrades(selectedAsset);
+  const { assets } = useAssets();
+  const [secid, setSecid] = useState<string>('');
+  const { klineData } = useKlineData(secid);
   const [recordList, setRecordList] = useState<TradeRecordItem[]>([]);
   const [completedTradeGroups, setCompletedTradeGroups] = useState<CompletedTradeGroup[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+
+  // 提取所选标的东财证券ID
+  useEffect(() => {
+    const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
+    if (asset && asset['东财证券ID']) {
+      setSecid(asset['东财证券ID']);
+    } else {
+      setSecid('');
+    }
+  }, [selectedAsset, assets]);
+
+  // 获取当前价格
+  useEffect(() => {
+    let currentPriceValue: number | null = null;
+    if (klineData && klineData.klines && klineData.klines.length > 0) {
+      const latestKline = klineData.klines[klineData.klines.length - 1];
+      currentPriceValue = latestKline.close;
+    } else {
+      const asset = assets.find((a: any) => a['标的名称'] === selectedAsset);
+      if (asset) {
+        currentPriceValue = parseFloat(asset['当前价格']) || null;
+      }
+    }
+    setCurrentPrice(currentPriceValue);
+  }, [selectedAsset, klineData, assets]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -132,37 +161,64 @@ export default function TradeRecord({ selectedAsset }: TradeRecordProps) {
                 </div>
                 {recordList
                   .filter((r) => r.status === 'uncompleted')
-                  .map((record) => (
-                    <div
-                      key={record.id}
-                      className="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-sm font-semibold px-2 py-0.5 rounded ${
-                              record.type === '买入'
-                                ? 'text-red-600 bg-red-100'
-                                : 'text-green-600 bg-green-100'
-                            }`}
-                          >
-                            {record.type}
-                          </span>
+                  .map((record) => {
+                    // 计算盈利比例和金额（仅限买入记录）
+                    let profitPercentage: string | null = null;
+                    let profitAmount: string | null = null;
+                    let profitColor = 'text-gray-600';
+                    
+                    if (record.type === '买入' && currentPrice !== null) {
+                      const percentage = (currentPrice / record.price - 1) * 100;
+                      const amount = (currentPrice - record.price) * record.amount;
+                      profitPercentage = percentage > 0 ? `+${percentage.toFixed(2)}%` : `${percentage.toFixed(2)}%`;
+                      profitAmount = amount > 0 ? `+¥${amount.toFixed(2)}` : `¥${amount.toFixed(2)}`;
+                      profitColor = amount >= 0 ? 'text-green-600' : 'text-red-600';
+                    }
+                    
+                    return (
+                      <div
+                        key={record.id}
+                        className="px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-sm font-semibold px-2 py-0.5 rounded ${
+                                record.type === '买入'
+                                  ? 'text-red-600 bg-red-100'
+                                  : 'text-green-600 bg-green-100'
+                              }`}
+                            >
+                              {record.type}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">{record.date}</span>
                         </div>
-                        <span className="text-xs text-gray-500">{record.date}</span>
+                        <div className="text-xs text-gray-600 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">数量:</span>
+                            <span className="font-medium">{record.amount}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">价格:</span>
+                            <span className="font-medium">¥{record.price.toFixed(2)}</span>
+                          </div>
+                          {profitPercentage && profitAmount && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">盈利比例:</span>
+                                <span className={`font-medium ${profitColor}`}>{profitPercentage}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-600">盈利金额:</span>
+                                <span className={`font-medium ${profitColor}`}>{profitAmount}</span>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-600 space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">数量:</span>
-                          <span className="font-medium">{record.amount}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">价格:</span>
-                          <span className="font-medium">¥{record.price.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
 
